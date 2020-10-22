@@ -1,0 +1,201 @@
+---
+title: "Heatmaps"
+author: "Kellen Cresswell"
+date: "3/11/2020"
+output: pdf_document
+---
+
+<style type="text/css">
+div.main-container {
+  max-width: 90%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+body{ /* Normal  */
+      font-size: 20px;
+  }
+  
+</style>
+
+
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 10000)
+```
+
+````{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, echo = FALSE, fig.width = 15, fig.height = 8, dpi = 600, echo = FALSE)
+```
+
+```{r}
+# Installation for Github packages
+#library(devtools)
+#install_gitlab()
+#install_git("https://gitlab.pg.com/cresswell.k/microbiomeworkflow.git")
+
+
+library(microbiomeworkflow)
+#devtools::install_github("dgrtwo/drlib")
+library(drlib);library(dplyr);library(tidyr);library(phyloseq);library(ggplot2);library(corncob);library(plotly);library(DivNet);library(gmodels)
+
+```
+
+```{r}
+#Reading in otu data 
+
+file =  'L7.data.xlsx.ph.txt'
+
+#Read in file with separator 
+rawdat = microbiomeworkflow::read_micro(file, sep = ";", remove_na = TRUE)
+
+```
+
+```{r}
+Demographics = readxl::read_xlsx("Demographics.xlsx", sheet = 1) %>% dplyr::select(identity, ethnicity, sex, race, smoking_status)
+#Organizing meta data
+
+samples = colnames(rawdat)[-c(1:7)]
+meta = data.frame(samples=samples)
+#Seperating out all the features
+samples_split = strsplit(as.character(meta$samples), split=".", fixed=TRUE)
+#Assigning treatment
+meta = meta %>% mutate(Treatment = sapply(samples_split, function(x) x[1])) %>%
+  mutate(Subject = sapply(samples_split, function(x) x[2])) %>% 
+  mutate(Visit = sapply(samples_split, function(x) x[3])) %>%
+  mutate(PH = as.numeric(sapply(samples_split, function(x) x[4])))
+#Setting factor levels for treatment
+meta = meta %>% mutate(Treatment = gsub("NA", "Baseline", Treatment)) %>%
+  mutate(Treatment = gsub("M", "Lily", Treatment)) %>%
+  mutate(Treatment = gsub("D", "Pearl", Treatment)) %>%
+  mutate(Treatment = gsub("T", "Compak", Treatment)) %>% 
+  mutate(Treatment = gsub("V", "CEF", Treatment)) 
+
+meta = meta %>% mutate(Treatment = factor(Treatment, levels = c("Baseline", "Pearl", "Lily", "Compak", "CEF")) )
+#Merging demographic data
+meta = left_join(meta, Demographics, by = c("Subject" = "identity"))
+
+
+```
+
+```{r}
+# Converting to phyloseq using custom function
+
+phylo = microbiomeworkflow::meta_mat_to_phyloseq(rawdat, meta)
+phylo = phylo %>% clean_taxa(.) %>% remove_zeros(.)
+```
+
+```{r}
+#Creating version of ph with factor
+phylo_norm = phylo %>% wrench_normalize(., treatment = "Treatment")
+```
+
+
+# Heatmap all subjects
+
+```{r}
+#Getting lactobacillus species
+phylo_lacto = phylo %>% transform_sample_counts(., function(x) log10(.0001+ x/sum(x))) %>% subset_taxa(., grepl("lacto", genus)) 
+otus_lacto = phylo_lacto %>%  otu_table(.)
+row.names(otus_lacto) = tax_table(phylo_lacto)[,"species"]
+
+#Getting the rest of genera
+
+phylo_genus = phylo %>% subset_taxa(., !grepl("un", species)) %>% subset_taxa(., !grepl("un", genus))  %>% tax_glom(., "genus")    %>% transform_sample_counts(., function(x) log10(.0001+ x/sum(x))) %>% subset_taxa(., !grepl("lacto", genus)) 
+
+otus_genus = phylo_genus %>%  otu_table(.)
+row.names(otus_genus) = tax_table(phylo_genus)[,"genus"]
+
+#Combining
+
+otus = rbind(otus_genus, otus_lacto)
+
+#Transforming PH
+ph = sample_data(phylo)$PH*.1
+
+#Creating heatmap to extract and label the 5 cluster groups
+clus = pheatmap::pheatmap(otus, clustering_distance_cols = "correlation", clustering_distance_rows = "correlation", clustering_method = "complete")
+
+#Getting clustering for columns from first run and creating column annotations
+
+annotation = data.frame("Community groups"= as.factor(cutree(clus$tree_col,5))
+, PH = as.factor(ph))
+
+#Saving group annotations for later
+annotation_all = annotation
+
+#Clustering taxa and creating frame for row annotations
+
+annotation_rows = data.frame("Taxon clusters" = as.factor(cutree(clus$tree_row,7)))
+
+#Adding correct names for species/genus to annotation
+
+row.names(annotation_rows) = make.unique(names(cutree(clus$tree_row,7)))
+
+#Creating final heatmap and pulling out legend
+
+clus = pheatmap::pheatmap(otus, annotation_col = annotation,  annotation_row = annotation_rows,  clustering_distance_cols = "correlation", clustering_distance_rows = "correlation", clustering_method = "complete", show_colnames = F, border_color = "grey60")
+
+ggsave(clus, file = "Heatmap_leg.png", units = "in", width = 3.5, height = 2.8, scale = 2.8)
+
+#Recreate version without legend
+
+clus = pheatmap::pheatmap(otus, annotation_col = annotation,  annotation_row = annotation_rows,  clustering_distance_cols = "correlation", clustering_distance_rows = "correlation", clustering_method = "complete", show_colnames = F, border_color = "grey60", annotation_legend = F)
+
+ggsave(clus, file = "Heatmap.png", units = "in", width = 3.5, height = 2.8, scale = 2.8)
+
+```
+
+# Heatmap baseline
+
+```{r}
+#Getting lactobacillus species (And subsetting to only include baseline)
+phylo_lacto = phylo %>% subset_samples(., Treatment == "Baseline") %>% transform_sample_counts(., function(x) log10(.0001+ x/sum(x))) %>% subset_taxa(., grepl("lacto", genus)) 
+otus_lacto = phylo_lacto %>%  otu_table(.)
+row.names(otus_lacto) = tax_table(phylo_lacto)[,"species"]
+
+#Getting the rest of genera (And subsetting to only include baseline)
+
+phylo_genus = phylo %>% subset_samples(., Treatment == "Baseline")  %>% subset_taxa(., !grepl("un", species)) %>% subset_taxa(., !grepl("un", genus))  %>% tax_glom(., "genus")    %>% transform_sample_counts(., function(x) log10(.0001+ x/sum(x))) %>% subset_taxa(., !grepl("lacto", genus)) 
+
+otus_genus = phylo_genus %>%  otu_table(.)
+row.names(otus_genus) = tax_table(phylo_genus)[,"genus"]
+
+#Combining
+
+otus = rbind(otus_genus, otus_lacto)
+
+#Transforming PH
+ph = sample_data(phylo %>% subset_samples(., Treatment == "Baseline"))$PH*.1
+
+#Creating heatmap to extract and label the 5 cluster groups
+clus = pheatmap::pheatmap(otus, clustering_distance_cols = "correlation", clustering_distance_rows = "correlation", clustering_method = "complete")
+
+#Getting clustering for columns from first run and creating column annotations
+
+annotation = data.frame("Community groups"= as.factor(cutree(clus$tree_col,5))
+, PH = as.factor(ph))
+
+
+#Clustering taxa and creating frame for row annotations
+
+annotation_rows = data.frame("Taxon clusters" = as.factor(cutree(clus$tree_row,7)))
+row.names(annotation_rows) = make.unique(names(cutree(clus$tree_row,7)))
+
+#Creating final heatmap and pulling out legend
+
+clus = pheatmap::pheatmap(otus, annotation_col = annotation,  annotation_row = annotation_rows,  clustering_distance_cols = "correlation", clustering_distance_rows = "correlation", clustering_method = "complete", show_colnames = F, border_color = "grey60")
+
+ggsave(clus, file = "Heatmap_leg_base.png", units = "in", width = 3.5, height = 2.8, scale = 2.8)
+
+#Recreate version without legend
+
+clus = pheatmap::pheatmap(otus, annotation_col = annotation,  annotation_row = annotation_rows,  clustering_distance_cols = "correlation", clustering_distance_rows = "correlation", clustering_method = "complete", show_colnames = F, border_color = "grey60", annotation_legend = F)
+
+ggsave(clus, file = "Heatmap_base.png", units = "in", width = 3.5, height = 2.8, scale = 2.8)
+
+```
+
+```{r}
+
+```
