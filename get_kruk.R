@@ -81,15 +81,15 @@ for (i in 1:d[1]){
     
     #mean=aggregate(x = mydata$Gene,by = list(mydata$Group),function(x) c(mean=mean(x), sd=sd(x)))
     MMM=aggregate(x = mydata$Gene,by = list(mydata$Group),function(x) (mean=mean(x)))
-    if(KP<=0.05){
-    jpeg(paste0(syn,".",probe,".jpg"), width = 300, height = 300)
-    p1<-ggplot(mydata, aes(x=Group, y=Gene)) + 
-      geom_boxplot()+
-      labs(title=paste(probe, syn, long) ,x="Group", y = "Expression")+
-      theme_classic()+ geom_jitter(shape=16, position=position_jitter(0.2))
-    print(p1)
-    dev.off()
-    }
+#    if(KP<=0.05){
+#    jpeg(paste0(syn,".",probe,".jpg"), width = 300, height = 300)
+#    p1<-ggplot(mydata, aes(x=Group, y=Gene)) + 
+#      geom_boxplot()+
+#      labs(title=paste(probe, syn, long) ,x="Group", y = "Expression")+
+#      theme_classic()+ geom_jitter(shape=16, position=position_jitter(0.2))
+#    print(p1)
+#    dev.off()
+#    }
     
     XXX=paste(MMM$x, collapse  =",")
     print(paste(probe,syn, long, ez,KP,pAB, pOY, pFL, pF3P3, pF3P5, pP3P5, 
