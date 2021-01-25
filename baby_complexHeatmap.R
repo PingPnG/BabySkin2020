@@ -20,7 +20,7 @@ filename <- args[1]
 ##########################
 
 #setwd("/Users/ping/Desktop/BabySkin/gene_fig")
-filename="lipid_data"
+#filename="lipid_data"
 
 
 A<-read.table(filename, sep="\t", header=TRUE)

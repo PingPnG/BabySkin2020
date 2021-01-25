@@ -8,7 +8,7 @@ my $usage="$0  [file] first line is title\n";
 die $usage unless @ARGV ==1;
 my ($file) = @ARGV;
 
-open (A, "</mnt/G6_2D/project/BabySkin/src/BabyMeta_10212020.txt")||die "could not open Baby_meta_09202020.txt\n";
+open (A, "</Users/ping/Desktop/BabySkin/src/BabyMeta_10212020.txt")||die "could not open Baby_meta_09202020.txt\n";
 my %newID;
 while (my $a=<A>){
     chomp $a;

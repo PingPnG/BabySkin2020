@@ -6,26 +6,24 @@ filename <- args[1]
 ##########################
 
 #setwd("/Users/ping/Desktop/BabySkin/gene_fig")
-#filename="Adult_Baby_marker.xls"
+#filename="lipid_data"
 
-truefc<-function(VVV){
-	XXX=VVV
-	if(VVV==0){
-	    XXX=NA
-   	}else if(VVV<1){
-	    XXX=-1/VVV
-    	}
-	return(XXX)	
-}
 
 A<-read.table(filename, sep="\t", header=TRUE)
 d <- dim(A);
 
 B=log10(A[1:d[1], 5:d[2]])
-#rownames(B)=paste(A[,2], A[,1])
-rownames(B)=A[,2]
+rownames(B)=paste(A[,2],A[,1])
+#B$syn=A[,2]
 Cname=colnames(A)[5:d[2]]
-#colnames(A)[1:4]
+#RM<-rowMeans(B)
+#x=data.frame(cbind(rowMeans(B),A[,2],A[,1]))
+#colnames(x)=c("RM","Syn","Probe")
+#library(dplyr)
+#x1 <- x %>% group_by(Syn) %>% filter(RM == max(RM)) 
+#B$syn=A[,2]
+#C<-B[rownames(B) %in% x1$Probe]
+
 Clen=length(Cname) ##there are 3 annotation columns
 splitname<-strsplit(Cname, "[.]")
 Group1=rep(NA, Clen)
@@ -74,17 +72,14 @@ my_sample_col =data.frame(cbind(Group1,Group2, Group3))
 #)
 
 row.names(my_sample_col) <- colnames(B)
-png(filename=paste0(filename,".png"), height=5600, width=2800, res=120)
+png(filename=paste0(filename,".png"), height=4800, width=2800, res=120)
 
 p1<-pheatmap(data_subset_norm,
          #annotation_colors = my_colour,
          annotation_row = my_gene_col,
          annotation_col = my_sample_col,
-         cluster_cols = FALSE,
-         cutree_rows = 8,
-         color = colorRampPalette(c("blue", "white", "red"))(50)
-         #cutree_cols = 2
-         )
+         cutree_rows = 2,
+         cutree_cols = 2)
 print(p1)
 dev.off()
 

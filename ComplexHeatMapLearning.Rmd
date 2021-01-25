@@ -1,0 +1,407 @@
+---
+title: "Complex HeatMap Learning Note"
+output: html_notebook
+---
+generate a random matrix where there are three groups in the columns and three groups in the rows:
+
+```{r}
+set.seed(123)
+nr1 = 4; nr2 = 8; nr3 = 6; nr = nr1 + nr2 + nr3
+nc1 = 6; nc2 = 8; nc3 = 10; nc = nc1 + nc2 + nc3
+mat = cbind(rbind(matrix(rnorm(nr1*nc1, mean = 1,   sd = 0.5), nr = nr1),
+          matrix(rnorm(nr2*nc1, mean = 0,   sd = 0.5), nr = nr2),
+          matrix(rnorm(nr3*nc1, mean = 0,   sd = 0.5), nr = nr3)),
+    rbind(matrix(rnorm(nr1*nc2, mean = 0,   sd = 0.5), nr = nr1),
+          matrix(rnorm(nr2*nc2, mean = 1,   sd = 0.5), nr = nr2),
+          matrix(rnorm(nr3*nc2, mean = 0,   sd = 0.5), nr = nr3)),
+    rbind(matrix(rnorm(nr1*nc3, mean = 0.5, sd = 0.5), nr = nr1),
+          matrix(rnorm(nr2*nc3, mean = 0.5, sd = 0.5), nr = nr2),
+          matrix(rnorm(nr3*nc3, mean = 1,   sd = 0.5), nr = nr3))
+   )
+mat = mat[sample(nr, nr), sample(nc, nc)] # random shuffle rows and columns
+rownames(mat) = paste0("row", seq_len(nr))
+colnames(mat) = paste0("column", seq_len(nc))
+```
+Heatmap() function which visualizes the matrix as a heatmap with default settings. Very similar as other heatmap tools, it draws the dendrograms, the row/column names and the heatmap legend. The default color schema is “blue-white-red” which is mapped to the minimal-mean-maximal values in the matrix. The title for the legend is assigned with an internal index number.
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+```{r}
+library(ComplexHeatmap)
+Heatmap(mat)
+```
+If you put Heatmap() inside a function or a for/if/while chunk, you won’t see the heatmap after executing Heatmap(). In this case, you need to use draw() function explicitly as follows. 
+for(...) {
+    ht = Heatmap(mat)
+    draw(ht)
+}
+
+color: A color mapping function should accept a vector of values and return a vector of corresponding colors. Users should always use circlize::colorRamp2() function to generate the color mapping function in Heatmap(). The two arguments for colorRamp2() is a vector of break values and a vector of corresponding colors. colorRamp2() linearly interpolates colors in every interval through LAB color space. Also using colorRamp2() helps to generate a legend with proper tick marks.In following example, values between -2 and 2 are linearly interpolated to get corresponding colors, values larger than 2 are all mapped to red and values less than -2 are all mapped to green.
+```{r}
+library(circlize)
+col_fun = colorRamp2(c(-2, 0, 2), c("green", "white", "red"))
+col_fun(seq(-3, 3))
+```
+
+```{r}
+Heatmap(mat, name = "mat", col = col_fun)
+```
+
+```{r}
+mat2 = mat
+mat2[1, 1] = 100000
+Heatmap(mat2, name = "mat", col = col_fun, 
+    column_title = "a matrix with outliers")
+```
+
+colorRamp2() makes colors in multiple heatmaps comparible if they are set with a same color mapping function.
+```{r}
+Heatmap(mat, name = "mat", col = col_fun, column_title = "mat")
+Heatmap(mat/4, name = "mat", col = col_fun, column_title = "mat/4")
+Heatmap(abs(mat), name = "mat", col = col_fun, column_title = "abs(mat)")
+```
+If the matrix is continuous, you can also simply provide a vector of colors and colors will be linearly interpolated. But not robust to outliers because the mapping starts from the minimal value in the matrix and ends with the maximal value. Following color mapping setting is identical to colorRamp2(seq(min(mat), max(mat), length = 10), rev(rainbow(10))).
+```{r}
+Heatmap(mat, name = "mat", col = rev(rainbow(10)), 
+    column_title = "set a color vector for a continuous matrix")
+```
+If the matrix contains discrete values (either numeric or character), colors should be specified as a named vector to make it possible for the mapping from discrete values to colors. If there is no name for the color, the order of colors corresponds to the order of unique(mat). Note now the legend is generated from the color mapping vector.
+```{r}
+discrete_mat = matrix(sample(1:4, 100, replace = TRUE), 10, 10)
+colors = structure(1:4, names = c("1", "2", "3", "4")) # black, red, green, blue
+Heatmap(discrete_mat, name = "mat", col = colors,
+    column_title = "a discrete numeric matrix")
+
+```
+character matrix:
+```{r}
+discrete_mat = matrix(sample(letters[1:4], 100, replace = TRUE), 10, 10)
+colors = structure(1:4, names = letters[1:4])
+Heatmap(discrete_mat, name = "mat", col = colors,
+    column_title = "a discrete character matrix")
+```
+for the numeric matrix (no matter the color is continuous mapping or discrete mapping), by default clustering is applied on both dimensions while for character matrix, clustering is turned off
+NA is allowed in the matrix. You can control the color of NA by na_col argument (by default it is grey for NA). The matrix that contains NA can be clustered by Heatmap().
+Note the NA value is not presented in the legend.
+```{r}
+mat_with_na = mat
+na_index = sample(c(TRUE, FALSE), nrow(mat)*ncol(mat), replace = TRUE, prob = c(1, 9))
+mat_with_na[na_index] = NA
+Heatmap(mat_with_na, name = "mat", na_col = "black",
+    column_title = "a matrix with NA values")
+```
+color space difference, RGB, LAB, XYZ, sRGB, LUV
+```{r}
+f1 = colorRamp2(seq(min(mat), max(mat), length = 3), c("blue", "#EEEEEE", "red"))
+f2 = colorRamp2(seq(min(mat), max(mat), length = 3), c("blue", "#EEEEEE", "red"), space = "RGB")
+Heatmap(mat, name = "mat1", col = f1, column_title = "LAB color space")
+Heatmap(mat, name = "mat2", col = f2, column_title = "RGB color space")
+```
+Last but not the least, colors for the heatmap borders can be set by the border/border_gp and rect_gp arguments. border/border_gp controls the global border of the heatmap body and rect_gp controls the border of the grids/cells in the heatmap.
+The value of border can be logical (TRUE corresponds to black) or a character of color (e.g. red). The use for border argument is only for historical reason, here you can also set border_gp argument which should be a gpar object.
+rect_gp is a gpar object which means you can only set it by grid::gpar(). Since the filled color is already controlled by the heatmap color mapping, you can only set the col parameter in gpar() to control the border of the heatmap grids.
+```{r}
+Heatmap(mat, name = "mat", border_gp = gpar(col = "black", lty = 2),
+    column_title = "set heatmap borders")
+```
+
+```{r}
+Heatmap(mat, name = "mat", rect_gp = gpar(col = "white", lwd = 2),
+    column_title = "set cell borders")
+```
+```{r}
+Heatmap(mat, name = "mat", rect_gp = gpar(type = "none"),
+    column_title = "nothing is drawn in the heatmap body")
+```
+
+2.2 Title: you can set heatmap title either by the row or/and by the column. BUt you can only put e.g. column title either on the top or at the bottom.
+```{r}
+Heatmap(mat, name = "mat", column_title = "I am a column title", 
+    row_title = "I am a row title")
+```
+
+```{r}
+Heatmap(mat, name = "mat", column_title = "I am a column title at the bottom", 
+    column_title_side = "bottom")
+```
+a big title with gpar set font and bold
+```{r}
+Heatmap(mat, name = "mat", column_title = "I am a big column title", 
+    column_title_gp = gpar(fontsize = 20, fontface = "bold"))
+```
+Rotations for titles can be set by row_title_rot and column_title_rot, but only horizontal 0 and vertical 90 rotations are allowed.
+```{r}
+Heatmap(mat, name = "mat", row_title = "row title", row_title_rot = 0)
+```
+```{r}
+# code only for demonstration
+# row title would be cluster_1 and cluster_2
+Heatmap(mat, name = "mat", row_km = 2, row_title = "cluster_%s")
+```
+title on different cluster. You can set fill parameter in row_title_gp and column_title_gp to set the background color of titles. 
+```{r}
+Heatmap(mat, name = "mat", column_title = "I am a column title", 
+    column_title_gp = gpar(fill = "red", col = "white", border = "blue"))
+
+```
+there is no space on the top of the column title when the background is colored. This can be solved by setting the global parameter ht_opt$TITLE_PADDING. 
+```{r}
+ht_opt$TITLE_PADDING = unit(c(8.5, 8.5), "points")
+Heatmap(mat, name = "mat", column_title = "I am a column title", 
+    column_title_gp = gpar(fill = "red", col = "white", border = "blue"))
+```
+rest padding
+```{r}
+ht_opt(RESET = TRUE)
+```
+expression in math formular in title
+```{r}
+Heatmap(mat, name = "mat", 
+    column_title = expression(hat(beta) == (X^t * X)^{-1} * X^t * y)) 
+```
+
+2.3 clustering
+You can specify the clustering either by:
+
+a pre-defined distance method (e.g. "euclidean" or "pearson"),
+a distance function,
+a object that already contains clustering (a hclust or dendrogram object or object that can be coerced to dendrogram class),
+a clustering function.
+
+render the dendrograms with different colors and styles for different nodes and branches for better revealing structures of the dendrogram (e.g. by dendextend::color_branches()).
+turn off row or column clustering, clustering on different side, changee wideth and height of dendogram
+```{r}
+Heatmap(mat, name = "mat", cluster_rows = FALSE) # turn off row clustering
+```
+```{r}
+Heatmap(mat, name = "mat", show_column_dend = FALSE) # hide column dendrogram
+```
+```{r}
+Heatmap(mat, name = "mat", row_dend_side = "right", column_dend_side = "bottom")
+```
+```{r}
+Heatmap(mat, name = "mat", column_dend_height = unit(4, "cm"), 
+    row_dend_width = unit(4, "cm"))
+```
+2.3.1 Distance methods
+supported methods in dist() function and in "pearson", "spearman" and "kendall". The correlation distance is defined as 1 - cor(x, y, method). All these built-in distance methods allow NA values.
+```{r}
+Heatmap(mat, name = "mat", clustering_distance_rows = "pearson",
+    column_title = "pre-defined distance method (1 - pearson)")
+```
+self defined function for distance
+```{r}
+Heatmap(mat, name = "mat", clustering_distance_rows = function(m) dist(m),
+    column_title = "a function that calculates distance matrix")
+```
+```{r}
+Heatmap(mat, name = "mat", clustering_distance_rows = function(x, y) 1 - cor(x, y),
+    column_title = "a function that calculates pairwise distance")
+```
+robust distance method to remove the outlier's effect for 90%
+```{r}
+mat_with_outliers = mat
+for(i in  1:10) mat_with_outliers[i, i] = 1000
+robust_dist = function(x, y) {
+    qx = quantile(x, c(0.1, 0.9))
+    qy = quantile(y, c(0.1, 0.9))
+    l = x > qx[1] & x < qx[2] & y > qy[1] & y < qy[2]
+    x = x[l]
+    y = y[l]
+    sqrt(sum((x - y)^2))
+}
+```
+compare two distance method
+```{r}
+Heatmap(mat_with_outliers, name = "mat", 
+    col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")),
+    column_title = "dist")
+Heatmap(mat_with_outliers, name = "mat", 
+    col = colorRamp2(c(-2, 0, 2), c("green", "white", "red")),
+    clustering_distance_rows = robust_dist,
+    clustering_distance_columns = robust_dist,
+    column_title = "robust_dist")
+```
+distance methods (like methods in stringdist package), you can also cluster a character matrix. 
+```{r}
+mat_letters = matrix(sample(letters[1:4], 100, replace = TRUE), 10)
+# distance in the ASCII table
+dist_letters = function(x, y) {
+    x = strtoi(charToRaw(paste(x, collapse = "")), base = 16)
+    y = strtoi(charToRaw(paste(y, collapse = "")), base = 16)
+    sqrt(sum((x - y)^2))
+}
+Heatmap(mat_letters, name = "letters", col = structure(2:5, names = letters[1:4]),
+    clustering_distance_rows = dist_letters, clustering_distance_columns = dist_letters,
+    cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
+        grid.text(mat_letters[i, j], x, y)
+    })
+```
+
+2.3.2 Clustering methods
+```{r}
+Heatmap(mat, name = "mat", clustering_method_rows = "single")
+```
+perform clustering with methods from cluster package either by a pre-calculated clustering object or a clustering function:
+```{r}
+library(cluster)
+Heatmap(mat, name = "mat", cluster_rows = diana(mat),
+   cluster_columns = agnes(t(mat)), column_title = "clustering objects")
+```
+
+```{r}
+# if cluster_columns is set as a function, you don't need to transpose the matrix
+Heatmap(mat, name = "mat", cluster_rows = diana,
+   cluster_columns = agnes, column_title = "clustering functions")
+```
+below is same as above
+```{r}
+# code only for demonstration
+Heatmap(mat, name = "mat", cluster_rows = function(m) as.dendrogram(diana(m)),
+    cluster_columns = function(m) as.dendrogram(agnes(m)), 
+    column_title = "clutering functions")
+```
+fastcluster::hclust implements a faster version of hclust()
+```{r}
+# code only for demonstration
+fh = function(x) fastcluster::hclust(dist(x))
+Heatmap(mat, name = "mat", cluster_rows = fh, cluster_columns = fh)
+```
+can be set as global setting to enable fastcluster
+```{r}
+# code only for demonstration
+ht_opt$fast_hclust = TRUE
+# now fastcluster::hclust is used in all heatmaps
+```
+cluster within group
+```{r}
+group = kmeans(t(mat), centers = 3)$cluster
+Heatmap(mat, name = "mat", cluster_columns = cluster_within_group(mat, group))
+```
+2.3.3 Render dendrograms
+generate a dendrogram object and render it through nodePar and edgePar parameter in advance, then send it to the cluster_rows or cluster_columns argument.
+```{r}
+library(dendextend)
+row_dend = as.dendrogram(hclust(dist(mat)))
+row_dend = color_branches(row_dend, k = 2) # `color_branches()` returns a dendrogram object
+Heatmap(mat, name = "mat", cluster_rows = row_dend)
+```
+row_dend_gp and column_dend_gp control the global graphic setting for dendrograms. Note e.g. graphic settings in row_dend will be overwritten by row_dend_gp.
+```{r}
+Heatmap(mat, name = "mat", cluster_rows = row_dend, row_dend_gp = gpar(col = "red"))
+```
+add graphics on the nodes of the dendrogram by setting a proper nodePar.
+```{r}
+row_dend = dendrapply(row_dend, function(d) {
+    attr(d, "nodePar") = list(cex = 0.8, pch = sample(20, 1), col = rand_color(1))
+    return(d)
+})
+Heatmap(mat, name = "mat", cluster_rows = row_dend, row_dend_width = unit(2, "cm"))
+```
+2.3.4 Reorder dendrograms
+```{r}
+m2 = matrix(1:100, nr = 10, byrow = TRUE)
+Heatmap(m2, name = "mat", row_dend_reorder = FALSE, column_title = "no reordering")
+Heatmap(m2, name = "mat", row_dend_reorder = TRUE, column_title = "apply reordering")
+```
+```{r}
+Heatmap(mat, name = "mat", column_title = "default reordering")
+
+library(dendsort)
+row_dend = dendsort(hclust(dist(mat)))
+col_dend = dendsort(hclust(dist(t(mat))))
+Heatmap(mat, name = "mat", cluster_rows = row_dend, cluster_columns = col_dend,
+    column_title = "reorder by dendsort")
+```
+2.4 Set row and column orders
+order by name
+```{r}
+Heatmap(mat, name = "mat", row_order = order(as.numeric(gsub("row", "", rownames(mat)))), 
+    column_order = order(as.numeric(gsub("column", "", colnames(mat)))),
+    column_title = "reorder matrix")
+```
+order by character
+```{r}
+Heatmap(mat, name = "mat", row_order = sort(rownames(mat)), 
+    column_order = sort(colnames(mat)),
+    column_title = "reorder matrix by row/column names")
+```
+2.5 Seriation: http://nicolas.kruchten.com/content/2018/02/seriation/). The powerful seriation package the object returned by the core function seriate() from seriation package, they can be directly assigned to row_order and column_order to make the heatmap.
+```{r}
+library(seriation)
+o = seriate(max(mat) - mat, method = "BEA_TSP")
+Heatmap(max(mat) - mat, name = "mat", 
+    row_order = get_order(o, 1), column_order = get_order(o, 2),
+    column_title = "seriation by BEA_TSP method")
+```
+you can apply seriate() to the distance matrix.
+```{r}
+o1 = seriate(dist(mat), method = "TSP")
+o2 = seriate(dist(t(mat)), method = "TSP")
+Heatmap(mat, name = "mat", row_order = get_order(o1), column_order = get_order(o2),
+    column_title = "seriation from the distance matrix")
+```
+```{r}
+o1 = seriate(dist(mat), method = "GW")
+o2 = seriate(dist(t(mat)), method = "GW")
+class(o1[[1]])
+o1[[1]]$order
+# should be the same as the previous one
+get_order(o1)
+```
+```{r}
+Heatmap(mat, name = "mat", cluster_rows = as.dendrogram(o1[[1]]), 
+    cluster_columns = as.dendrogram(o2[[1]]))
+```
+2.6 Dimension names
+which side for column or row name
+```{r}
+Heatmap(mat, name = "mat", row_names_side = "left", row_dend_side = "right", 
+    column_names_side = "top", column_dend_side = "bottom")
+```
+not showing 
+```{r}
+Heatmap(mat, name = "mat", show_row_names = FALSE)
+```
+increase font side
+```{r}
+Heatmap(mat, name = "mat", row_names_gp = gpar(fontsize = 20))
+```
+color the row name accordingly
+```{r}
+Heatmap(mat, name = "mat", row_names_gp = gpar(col = c(rep("red", 10), rep("blue", 8))))
+```
+center align
+```{r}
+Heatmap(mat, name = "mat", row_names_centered = TRUE, column_names_centered = TRUE)
+```
+rotation col row names
+```{r}
+Heatmap(mat, name = "mat", column_names_rot = 45)
+Heatmap(mat, name = "mat", column_names_rot = 45, column_names_side = "top",
+    column_dend_side = "bottom")
+```
+If you have row names or column names which are too long, row_names_max_width or column_names_max_height can be used to set the maximal space for them. 
+```{r}
+mat2 = mat
+rownames(mat2)[1] = paste(c(letters, LETTERS), collapse = "")
+Heatmap(mat2, name = "mat", row_title = "default row_names_max_width")
+Heatmap(mat2, name = "mat", row_title = "row_names_max_width as length of a*",
+    row_names_max_width = max_text_width(
+        rownames(mat2), 
+        gp = gpar(fontsize = 12)
+    ))
+```
+```{r}
+# use a named vector to make sure the correspondance between 
+# row names and row labels is correct
+row_labels = structure(paste0(letters[1:24], 1:24), names = paste0("row", 1:24))
+column_labels = structure(paste0(LETTERS[1:24], 1:24), names = paste0("column", 1:24))
+row_labels
+Heatmap(mat, name = "mat", row_labels = row_labels[rownames(mat)], 
+    column_labels = column_labels[colnames(mat)])
+```
+mathematical expression can be used as row names in the heatmap.
+```{r}
+Heatmap(mat, name = "mat", row_labels = expression(alpha, beta, gamma, delta, epsilon, 
+    zeta, eta, theta, iota, kappa, lambda, mu, nu, xi, omicron, pi, rho, sigma))
+```
+2.7 Heatmap split

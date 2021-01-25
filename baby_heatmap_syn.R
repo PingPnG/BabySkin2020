@@ -4,7 +4,7 @@ args <- commandArgs(trailingOnly = TRUE)
 
 filename <- args[1]
 ##########################
-
+filename="ECM_LCE_MHC_data"
 #setwd("/Users/ping/Desktop/BabySkin/gene_fig")
 #filename="Adult_Baby_marker.xls"
 
@@ -22,7 +22,10 @@ A<-read.table(filename, sep="\t", header=TRUE)
 d <- dim(A);
 
 B=log10(A[1:d[1], 5:d[2]])
-rownames(B)=A[,2]
+#rownames(B)=A[,2]
+rownames(B)=paste(A[,2],A[,1])
+genenames=A[,3]
+Ftype=A[,4]
 Cname=colnames(A)[5:d[2]]
 #colnames(A)[1:4]
 Clen=length(Cname) ##there are 3 annotation columns
@@ -51,12 +54,13 @@ data_subset_norm <- t(apply(B, 1, cal_z_score))
 my_hclust_gene <- hclust(dist(data_subset_norm), method = "complete")
 #install.packages("dendextend")
 library(dendextend)
-
+my_gene_col <- cutree(tree = as.dendrogram(my_hclust_gene), k = 2)
+cluster = ifelse(test = my_gene_col == 1, yes = "cluster 1", no = "cluster 2")
+my_gene_col=data.frame(cbind(cluster, Ftype))
 #as.dendrogram(my_hclust_gene) %>%
 #  plot(horiz = TRUE)
 #dev.off()
-my_gene_col <- cutree(tree = as.dendrogram(my_hclust_gene), k = 2)
-my_gene_col <- data.frame(cluster = ifelse(test = my_gene_col == 1, yes = "cluster 1", no = "cluster 2"))
+
 #set.seed(1984)
 #my_random <- as.factor(sample(x = 1:2, size = nrow(my_gene_col), replace = TRUE))
 #my_gene_col$random <- my_random
