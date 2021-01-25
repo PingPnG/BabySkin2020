@@ -1,0 +1,711 @@
+---
+title: "analysis.Rmd"
+author: "Kellen Cresswell"
+date: "4/6/2020"
+output: html_document
+---
+
+```{r}
+#-------------------------------------------------------------#
+# Author:  Dionne Swift
+# Program: 01-derive-eagle.R
+# Purpose:Analysis of GSS2582  
+#--------------------------------------------------------------#
+# Creating DataSets ( Full DataSet (dat0) and Excluding Outliers (dat1)
+# 1. decode: a dataframe, rownames are sampleIDs
+# 2. signal: a matrix, rownames are probeIDs and colnames are sampleIDs
+# 3. identical(rownames(decode), colnames(signal))
+# 4. dat0 = full data
+#-----------------------------------------------------------#
+
+path = 'C:/Users/cresswell.k/OneDrive - Procter and Gamble/Documents/Baby_Expression_Project/R files/Script/'
+#study = 'GSS2582'
+#-------- Calling in Base program which calls libraries needed for analyses -----------#
+source(paste(path,'00-initialise.R',sep=""))
+#-----------  Setting up Working Directory --------------#
+
+library(limma)
+library(dplyr)
+options(stringsAsFactors=F)
+
+#Reading in data
+meta = readRDS('\\\\mb-qs-files-01.rd-hcanalyt001.na.pg.com\\DMSFiles\\special\\BiotechQC\\Miami University\\GSS Studies\\GSS2656\\R files\\Data\\dat0.rds')
+meta_extra = read.csv("\\\\mb-qs-files-01.rd-hcanalyt001.na.pg.com\\DMSFiles\\special\\BiotechQC\\Miami University\\GSS Studies\\GSS2656\\R files\\Data\\extra_data.csv", 
+                      fileEncoding="UTF-8-BOM")
+#Merging meta data
+meta$meta = left_join(meta$meta, meta_extra %>% mutate(SUBJECT_ID = as.factor(SUBJECT_ID)), by = "SUBJECT_ID")
+
+signal = meta$signal
+meta = meta$meta
+
+#Grabbing excluded samples from QC 
+excluded = c("GSS2656_32","GSS2656_71", "GSS2656_36", "GSS2656_47")
+
+meta = meta[!meta$SAMP_ID %in% excluded,]
+signal=signal[,!colnames(signal) %in% excluded ]
+identical(as.character(meta$SAMP_ID), colnames(signal))
+#[1] TRUE
+indata = signal
+data.sig.log = as.matrix(log2(indata))
+```
+
+```{r}
+#Organizing the data for modeling
+decode = meta
+decode_babies = meta %>% filter(!grepl("Butt",SITE ))
+
+#Defining preterm and full term for main dataset
+
+decode = decode %>% mutate(Age_Group = ifelse(GA<37 & !grepl("Butt", SITE), "PT",
+                                           ifelse(GA>37 & !grepl("Butt", SITE), "FT",
+                                                  ifelse(grepl("_20", SITE), "20", "60"))))
+
+#Removing age labels from site
+
+decode = decode %>% mutate(SITE = gsub("_.*", "", SITE))
+                           
+#Adding time alive age
+
+decode = decode %>% mutate(TA = as.numeric(as.character(AGE))-GA)
+
+#Adding weeks alive
+
+decode = decode %>% mutate(Weeks = ifelse(TA<2.1, "<2", ifelse(TA>4.9, ">5", NA)))
+
+#Adding foreskin vs. all to baby data
+
+decode = decode %>% mutate(ForeSkin  = ifelse(grepl("foreskin", SITE) & Age_Group %in% c("FT", "PT"), "foreskin", ifelse(!grepl("foreskin", SITE) & Age_Group %in% c("FT", "PT"), "other", paste0(Age_Group)) ))
+```
+
+```{r}
+
+
+decode = decode %>%  mutate(combined = ifelse(Age_Group %in% c("FT", "PT"), "Baby", Age_Group))
+
+decode = decode %>% mutate(PT = ifelse(GA<33.9, "PT", ifelse(
+  GA>36.9, "FT", NA
+))) 
+
+
+decode = decode %>% mutate(Weeks = ifelse(TA<2.1 & Age_Group == "PT", "PT2",
+                                                                              ifelse(TA>4.9 & Age_Group == "PT", "PT5", 
+                                                                                    ifelse(TA<2.1 & Age_Group == "FT", "FT2", NA))))
+
+#Getting samples
+TwentySixty = decode %>% filter(Age_Group %in% c(20,60))
+TwentySixty = split(TwentySixty$SUBJECT_ID, TwentySixty$Age_Group)
+TwentySixty = rowr::cbind.fill(TwentySixty[[1]], TwentySixty[[2]], fill = "")
+colnames(TwentySixty) = c(20,60)
+
+write.csv(TwentySixty, "TwentySixty_Samples.csv", row.names = FALSE, quote = FALSE)
+
+#Getting samples
+Babyvs20 = decode %>% filter(combined %in% c("Baby", "20")) %>% filter(ForeSkin == "other" | (combined == "20"))
+Babyvs20 = split(Babyvs20$SUBJECT_ID, Babyvs20$combined)
+Babyvs20 = rowr::cbind.fill(Babyvs20[[1]], Babyvs20[[2]], fill = "")
+colnames(Babyvs20) = c(20,"Baby")
+
+write.csv(Babyvs20, "Babyvs20_Samples.csv", row.names = FALSE, quote = FALSE)
+
+#Getting samples
+VeryPTvsFT = decode %>% filter(ForeSkin == "other") %>% filter(!is.na(PT))
+VeryPTvsFT = split(VeryPTvsFT$SUBJECT_ID, VeryPTvsFT$PT)
+VeryPTvsFT = rowr::cbind.fill(VeryPTvsFT[[1]], VeryPTvsFT[[2]], fill = "")
+colnames(VeryPTvsFT) = c("FT","PT")
+
+write.csv(VeryPTvsFT, "VeryPTvsFT_Samples.csv", row.names = FALSE, quote = FALSE)
+
+#Getting samples
+FT2vsPT2vsP5 = decode %>% filter(ForeSkin == "other") %>% filter(!is.na(Weeks))
+FT2vsPT2vsP5 = split(FT2vsPT2vsP5$SUBJECT_ID, FT2vsPT2vsP5$Weeks)
+FT2vsPT2vsP5 = rowr::cbind.fill(FT2vsPT2vsP5[[1]], FT2vsPT2vsP5[[2]], FT2vsPT2vsP5[[3]], fill = "")
+colnames(FT2vsPT2vsP5) = c("FT2","PT2", "PT5")
+
+write.csv(FT2vsPT2vsP5, "FT2vsPT2vsPT5_Samples.csv", row.names = FALSE, quote = FALSE)
+```
+
+```{r}
+design = model.matrix(~0 +Age_Group + SITE +SEX, data=decode)
+
+#head(design)
+
+# Fit probeset-level models
+fit = lmFit(data.sig.log, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  TwentyVsSixty = Age_Group20-Age_Group60,
+  FTVsPT = Age_GroupFT-Age_GroupPT,
+  FTVsAge_Group20 = Age_GroupFT-Age_Group20,
+  FTVsAge_Group60 = Age_GroupFT-Age_Group60,
+  PTVsAge_Group20 = Age_GroupPT-Age_Group20,
+  PTVsAge_Group60 = Age_GroupPT-Age_Group60,
+  AbVsForeskin = SITEforeskin,
+  ChestVsForeskin = SITEchest-SITEforeskin,
+  BackVsForeskin = SITEback-SITEforeskin,
+  AbVsBack = SITEback,
+  AbVsChest = SITEchest,
+  ChestVsBack = SITEchest-SITEback,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+
+#Writing data
+
+lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = .1, n = Inf)
+write.csv(y, paste0(x, ".summary.csv"))
+})
+```
+
+```{r}
+decode_sub = decode %>% filter(!is.na(ForeSkin)) %>% filter(Age_Group != "FT")
+
+design = model.matrix(~0 +  ForeSkin +SEX, data=decode_sub)
+
+
+data.sig.log2 = data.sig.log[, colnames(data.sig.log) %in% decode_sub$SAMP_ID]
+# Fit probeset-level models
+fit = lmFit(data.sig.log2, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  ForeSkinvsOther = ForeSkinother-ForeSkinforeskin,
+  ForeSkinvs20 = ForeSkin20-ForeSkinforeskin,
+  ForeSkinvs60 = ForeSkin60-ForeSkinforeskin,
+  Othervs20 = ForeSkin20-ForeSkinother,
+  Othervs60 = ForeSkin60-ForeSkinother,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+
+#Writing data
+
+lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = .1, n = Inf)
+write.csv(y, paste0(x, ".summary.csv"))
+})
+```
+
+```{r}
+decode_sub = decode %>% filter(ForeSkin == "foreskin" & SEX == "M")
+
+table(decode_sub$Age_Group)
+
+design = model.matrix(~0 +Age_Group, data=decode_sub)
+
+
+data.sig.log2 = data.sig.log[, colnames(data.sig.log) %in% decode_sub$SAMP_ID]
+# Fit probeset-level models
+fit = lmFit(data.sig.log2, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  AGE = Age_GroupFT-Age_GroupPT,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+
+#Writing data
+
+lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = .1, n = Inf)
+write.csv(y, paste0(x, ".summary.csv"))
+})
+```
+
+```{r}
+decode_sub = decode %>% filter(ForeSkin == "other") %>% mutate(combined = ifelse(Age_Group %in% c("FT", "PT"), "Baby", Age_Group))
+
+table(decode_sub$Age_Group)
+
+design = model.matrix(~0 +Age_Group + SEX, data=decode_sub)
+
+
+data.sig.log2 = data.sig.log[, colnames(data.sig.log) %in% decode_sub$SAMP_ID]
+# Fit probeset-level models
+fit = lmFit(data.sig.log2, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  AGE = Age_GroupFT-Age_GroupPT,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+
+#Writing data
+
+lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = .1, n = Inf)
+write.csv(y, paste0(x, ".summary.csv"))
+})
+```
+
+
+```{r}
+decode_sub = decode %>% filter(ForeSkin == "other" | (ForeSkin == 20)) %>% mutate(combined = ifelse(Age_Group %in% c("FT", "PT"), "Baby", Age_Group))
+
+table(decode_sub$Age_Group)
+
+design = model.matrix(~0 +combined + SEX, data=decode_sub)
+
+
+data.sig.log2 = data.sig.log[, colnames(data.sig.log) %in% decode_sub$SAMP_ID]
+# Fit probeset-level models
+fit = lmFit(data.sig.log2, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  AGE = combined20-combinedBaby,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+
+#Writing data
+
+lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = .1, n = Inf)
+write.csv(y, paste0(x, ".summary.csv"))
+})
+```
+
+```{r}
+decode_sub = decode %>% filter(ForeSkin == "other") %>% mutate(PT = ifelse(GA<33.9, "PT", ifelse(
+  GA>36.9, "FT", NA
+))) %>% filter(!is.na(PT))
+
+table(decode_sub$Age_Group)
+
+design = model.matrix(~0 + PT + SEX + TA, data=decode_sub)
+
+
+data.sig.log2 = data.sig.log[, colnames(data.sig.log) %in% decode_sub$SAMP_ID]
+# Fit probeset-level models
+fit = lmFit(data.sig.log2, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  AGE = PTFT-PTPT,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+
+#Writing data
+
+lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = .1, n = Inf)
+write.csv(y, paste0(x, ".summary.csv"))
+})
+```
+
+
+```{r}
+decode_sub = decode %>% filter(ForeSkin == "other") %>% mutate(Weeks = ifelse(TA<2.1 & Age_Group == "PT", "PT2",
+                                                                              ifelse(TA>4.9 & Age_Group == "PT", "PT5", 
+                                                                                    ifelse(TA<2.1 & Age_Group == "FT", "FT2", NA)))) %>% filter(!is.na(Weeks))
+                                                               
+
+table(decode_sub$Age_Group)
+
+design = model.matrix(~0 + Weeks + SEX, data=decode_sub)
+
+
+data.sig.log2 = data.sig.log[, colnames(data.sig.log) %in% decode_sub$SAMP_ID]
+# Fit probeset-level models
+fit = lmFit(data.sig.log2, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  FT2VSPT2 = WeeksFT2-WeeksPT2,
+  FT2VSPT5  = WeeksFT2-WeeksPT5,
+  PT2VSPT5 = WeeksPT2-WeeksPT5,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+
+#Writing data
+
+lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = .1, n = Inf)
+write.csv(y, paste0(x, ".summary.csv"))
+})
+
+#Saving significant probes
+
+vals = lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = 1, n = Inf) %>% mutate(rn = row.names(.)) %>% filter(P.Value<=.05)
+return(y)
+})
+
+vals = lapply(vals, function(x) x$rn)
+
+over =calculate.overlap(vals)
+venn.diagram(over, filename = "Venn")
+
+sapply(over, length)
+```
+
+
+```{r}
+decode_2 = decode %>% filter(Weeks == "<2")
+
+table(decode_2$Age_Group)
+table(decode_2$SITE)
+
+design = model.matrix(~0 +Age_Group + SITE + SEX, data=decode_2)
+
+#head(design)
+#Getting data
+
+data.sig.log_2 = data.sig.log[,colnames(data.sig.log) %in% decode_2$SAMP_ID]
+
+match(colnames(data.sig.log_2), decode_2$SAMP_ID)
+
+# Fit probeset-level models
+fit = lmFit(data.sig.log_2, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  BelowTwo = Age_GroupFT-Age_GroupPT,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+
+#Writing data
+
+lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = .1, n = Inf)
+write.csv(y, paste0(x, ".summary.csv"))
+})
+```
+
+```{r}
+decode_2 = decode %>% filter(Age_Group == "FT")
+
+table(decode_2$Age_Group)
+table(decode_2$ForeSkin)
+
+design = model.matrix(~0 + ForeSkin + SEX + TA, data=decode_2)
+
+#head(design)
+#Getting data
+
+data.sig.log_2 = data.sig.log[,colnames(data.sig.log) %in% decode_2$SAMP_ID]
+
+match(colnames(data.sig.log_2), decode_2$SAMP_ID)
+
+# Fit probeset-level models
+fit = lmFit(data.sig.log_2, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  Fore = ForeSkinforeskin-ForeSkinother,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+
+#Writing data
+
+lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = .1, n = Inf)
+write.csv(y, paste0(x, ".summary.csv"))
+})
+```
+
+
+
+```{r}
+butt_sites = which(!grepl("Butt",decode$SITE ))
+data.sig.log_sub = data.sig.log[,butt_sites]
+
+design = model.matrix(~0 +Age_Group + SITE + TA, data=decode  %>% filter(!grepl("Butt",SITE )))
+
+#head(design)
+
+# Fit probeset-level models
+fit = lmFit(data.sig.log_sub, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  FTVsPT = Age_GroupFT-Age_GroupPT,
+  Age = TA,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+# Extract probeset-level results for a specific contrast
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+```
+
+```{r}
+decode_2 = decode %>% filter(Age_Group == "PT")
+
+table(decode_2$Age_Group)
+table(decode_2$ForeSkin)
+
+design = model.matrix(~0 + ForeSkin + SEX + TA, data=decode_2)
+
+#head(design)
+#Getting data
+
+data.sig.log_2 = data.sig.log[,colnames(data.sig.log) %in% decode_2$SAMP_ID]
+
+match(colnames(data.sig.log_2), decode_2$SAMP_ID)
+
+# Fit probeset-level models
+fit = lmFit(data.sig.log_2, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  Fore = ForeSkinforeskin-ForeSkinother,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+
+#Writing data
+
+lapply(colnames(fit2$coefficients), function(x) {
+y = topTable(fit2, coef = x, p.value = .1, n = Inf)
+write.csv(y, paste0(x, ".summary.csv"))
+})
+```
+
+
+
+```{r}
+butt_sites = which(!grepl("Butt",decode$SITE ))
+data.sig.log_sub = data.sig.log[,butt_sites]
+
+design = model.matrix(~0 +Age_Group + SITE + TA, data=decode  %>% filter(!grepl("Butt",SITE )))
+
+#head(design)
+
+# Fit probeset-level models
+fit = lmFit(data.sig.log_sub, design=design)
+
+# Generate contrasts of interest
+trasts = makeContrasts(
+  FTVsPT = Age_GroupFT-Age_GroupPT,
+  Age = TA,
+  levels=design
+)
+
+# Calculate results for all contrasts
+
+fit2 = contrasts.fit(fit, trasts)
+fit2 = eBayes(fit2)
+
+# Extract probeset-level results for a specific contrast
+
+tvalue= fit2$t
+dimnames(tvalue)[[2]]=paste("TS_",dimnames(tvalue)[[2]],sep="")
+
+pvalue=fit2$p.value
+dimnames(pvalue)[[2]]=paste("PVAL_",dimnames(pvalue)[[2]],sep="")
+colSums(pvalue<=0.05) 
+#PVAL_WaterLily_6hrsvsNoTrt_6hrs PVAL_WaterLily_24hrsvsNoTrt_24hrs 
+#1769                              3445 
+
+#q-value
+q = apply(pvalue, 2, function(x) round(p.adjust(x,method="BH"),6))
+
+colSums(q<=0.1)
+```
+
