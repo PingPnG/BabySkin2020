@@ -5,8 +5,8 @@ rm(list=ls())
 library(ggplot2)
 args <- commandArgs(trailingOnly = TRUE)
 filename <- args[1]
-#filename="PT3vsFT3.txt"
-FCCUT=1.2
+
+FCCUT=1.5
 
 log2FC_truefc<-function(VVV){
   XXX=2**VVV
