@@ -26,11 +26,11 @@ for(mm in  1:Clen ){
     Group3[mm]=splitname[[mm]][3]
     GSSID[mm]=splitname[[mm]][4]
 }
-Group1[Group1=='BabyAdult']='BabyOutlier'
-Group1[Group1=='NotUsed']='BabyForeskin'
+Group1[Group1=='BabyAdult']='InfantOutlier'
+Group1[Group1=='NotUsed']='Infant_foreskin'
 Group1[Group1=='X20s']='Adult20s'
 Group1[Group1=='X60s']='Adult60s'
-Group1[Group1=='baby']='Baby'
+Group1[Group1=='baby']='Infant'
 C=t(B)
 df_pca <- prcomp(C)
 
@@ -58,7 +58,7 @@ df_out$group2=Group2
 df_out$group1=Group1
 df_out$group3=Group3
 df_out$name=Cname
-install.packages("ggpmisc")
+#install.packages("ggpmisc")
 library("ggpmisc")
 library('ggpubr')
 #p1<-ggplot(df_out,aes(x=PC1,y=PC2,color=Group1, label=name ))+ geom_point(size=6)+scale_color_manual(values=brewer.pal(nlevels(as.factor(Group1)), "Set1"))+stat_chull(aes(color=Group1, fill=Group1), alpha=0.1, geom="polygon") 
@@ -70,10 +70,10 @@ png(paste0(filename,".PCA_all.png"), width=800, height=800, res=120)
 p1
 dev.off()
 
-df_pca2 <- prcomp(C[Group1 !="BabyOutlier",])
+df_pca2 <- prcomp(C[Group1 !="InfantOutlier",])
 df_out2 <-as.data.frame(df_pca2$x)
-group=Group1[Group1 !="BabyOutlier"]
-name2=Cname[Group1 !="BabyOutlier"]
+group=Group1[Group1 !="InfantOutlier"]
+name2=Cname[Group1 !="InfantOutlier"]
 p1<-ggplot(df_out2,aes(x=PC1,y=PC2,color=group, label=name2 ))+ geom_point(size=5)+scale_color_manual(values=brewer.pal(nlevels(as.factor(group)), "Set1"))+stat_chull(aes(color=group, fill=group), alpha=0.1, geom="polygon") +theme_pubclean()
 png(paste0(filename,".PCA_NoOutlier.png"), width=800, height=800, res=120)
 p1
@@ -84,10 +84,10 @@ png(paste0(filename,".PCA_NoOutlier_BW.png"), width=800, height=800, res=120)
 p1
 dev.off()
 
-df_pca2 <- prcomp(C[Group1 !="BabyOutlier" & Group1 !="BabyForeskin",])
+df_pca2 <- prcomp(C[Group1 !="InfantOutlier" & Group1 !="Infant_foreskin",])
 df_out2 <-as.data.frame(df_pca2$x)
-group=Group1[Group1 !="BabyOutlier" & Group1 != "BabyForeskin"]
-name2=Cname[Group1 !="BabyOutlier"& Group1 != 'BabyForeskin']
+group=Group1[Group1 !="InfantOutlier" & Group1 != "Infant_foreskin"]
+name2=Cname[Group1 !="InfantOutlier"& Group1 != 'Infant_foreskin']
 p1<-ggplot(df_out2,aes(x=PC1,y=PC2,color=group, label=name2 ))+ geom_point(size=5)+scale_color_manual(values=brewer.pal(nlevels(as.factor(group)), "Set1"))+stat_chull(aes(color=group, fill=group), alpha=0.1, geom="polygon") +theme_pubclean()
 png(paste0(filename,".PCA_NoForeskin.png"), width=800, height=800, res=120)
 p1
@@ -102,6 +102,28 @@ p1
 dev.off()
 
 #######################above For Paper 1 Cluster Figure #######################
+
+
+df_pca3 <- prcomp(C[Group1 !="InfantOutlier" & Group1 !="Adult20s" & Group1 != "Adult60s",])
+df_out3 <-as.data.frame(df_pca3$x)
+group=Group1[Group1 !="InfantOutlier" & Group1 != "Adult20s" & Group1 != "Adult60s"]
+group[group=="Infant"]="Infant_non-foreskin"
+name3=Cname[Group1 !="InfantOutlier"& Group1 != 'Adult20s' & Group1 != "Adult60s"]
+p1<-ggplot(df_out3,aes(x=PC1,y=PC2,color=group, label=name3 ))+ geom_point(size=5)+scale_color_manual(values=brewer.pal(nlevels(as.factor(group)), "Set1"))+stat_chull(aes(color=group, fill=group), alpha=0.1, geom="polygon") +theme_pubclean()
+png(paste0(filename,".PCA_baby_Foreskin.png"), width=800, height=800, res=120)
+p1
+dev.off()
+
+
+
+
+
+
+
+
+
+
+
 
 p1<-ggplot(df_out2,aes(x=PC1,y=PC2,color=group, label=name2 ))+ geom_point(size=5)+scale_color_manual(values=brewer.pal(nlevels(as.factor(group)), "Set1"))+stat_chull(aes(color=group, fill=group), alpha=0.1, geom="polygon") +theme_bw()
 png(paste0(filename,".PCA_NoOutlier_BW.png"), width=800, height=800, res=120)
